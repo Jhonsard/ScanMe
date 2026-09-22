@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Public
@@ -53,6 +54,7 @@ fun IspDetailsCard(
     errorMessage: String?,
     onRefreshIsp: () -> Unit,
     onUnlockPro: () -> Unit,
+    onGoogleSearchAudit: ((IspInfo) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     Card(
@@ -222,6 +224,28 @@ fun IspDetailsCard(
                                     fontWeight = FontWeight.Medium
                                 )
                             }
+                        }
+
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        // Audit FAI Google Search Grounding
+                        Button(
+                            onClick = { onGoogleSearchAudit?.invoke(ispInfo) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("isp_google_search_audit_button"),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = PrimaryNavy,
+                                contentColor = AccentCyan
+                            )
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.AutoAwesome,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Audit Pannes & Sécurité FAI (Google Search)")
                         }
                     }
                 } else {

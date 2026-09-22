@@ -3,6 +3,8 @@ package com.example.ui
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.ai.GeminiSearchGroundingService
+import com.example.ai.GroundingAuditResult
 import com.example.billing.BillingRepository
 import com.example.billing.PaymentCard
 import com.example.billing.PaymentGatewayService
@@ -57,7 +59,12 @@ data class ScanUiState(
     val paymentErrorMessage: String? = null,
     val ispInfo: IspInfo? = null,
     val isLoadingIsp: Boolean = false,
-    val ispErrorMessage: String? = null
+    val ispErrorMessage: String? = null,
+    val isGroundingLoading: Boolean = false,
+    val groundingResult: GroundingAuditResult? = null,
+    val groundingErrorMessage: String? = null,
+    val groundingTargetTitle: String? = null,
+    val showGroundingDialog: Boolean = false
 ) {
     val displayedDevices: List<NetworkDevice>
         get() {
@@ -76,7 +83,8 @@ class ScanViewModel @JvmOverloads constructor(
     private val customTrialManager: TrialManager? = null,
     private val customIspService: IspNetworkService? = null,
     private val customDeviceRepository: DeviceRepository? = null,
-    private val customScanAggregator: NetworkScanAggregator? = null
+    private val customScanAggregator: NetworkScanAggregator? = null,
+    private val customGeminiGroundingService: GeminiSearchGroundingService? = null
 ) : AndroidViewModel(application) {
 
     private val subnetManager = SubnetManager(application)
@@ -89,6 +97,7 @@ class ScanViewModel @JvmOverloads constructor(
     val trialManager = customTrialManager ?: TrialManager(application)
     private val paymentGatewayService = PaymentGatewayService(application, billingRepository)
     private val ispNetworkService = customIspService ?: IspNetworkService()
+    val geminiGroundingService = customGeminiGroundingService ?: GeminiSearchGroundingService()
 
     private val _uiState = MutableStateFlow(
         ScanUiState(
@@ -277,6 +286,97 @@ class ScanViewModel @JvmOverloads constructor(
                     )
                 }
             }
+        }
+    }
+
+    /**
+     * Lance un audit de cybersécurité en direct avec Google Search Grounding (gemini-3.5-flash)
+     * pour l'équipement réseau spécifié.
+     */
+    fun auditDeviceWithGoogleSearch(device: NetworkDevice) {
+        _uiState.update {
+            it.copy(
+                showGroundingDialog = true,
+                isGroundingLoading = true,
+                groundingResult = null,
+                groundingErrorMessage = null,
+                groundingTargetTitle = "${device.displayName} (${device.ipAddress})"
+            )
+        }
+        viewModelScope.launch {
+            val result = geminiGroundingService.auditDevice(device)
+            if (result.isSuccess) {
+                _uiState.update {
+                    it.copy(
+                        isGroundingLoading = false,
+                        groundingResult = result.getOrNull(),
+                        groundingErrorMessage = null
+                    )
+                }
+            } else {
+                _uiState.update {
+                    it.copy(
+                        isGroundingLoading = false,
+                        groundingErrorMessage = result.exceptionOrNull()?.message
+                            ?: "Erreur lors de l'audit Google Search Grounding"
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * Lance un audit de cybersécurité et de réputation FAI avec Google Search Grounding.
+     */
+    fun auditIspWithGoogleSearch(isp: IspInfo) {
+        _uiState.update {
+            it.copy(
+                showGroundingDialog = true,
+                isGroundingLoading = true,
+                groundingResult = null,
+                groundingErrorMessage = null,
+                groundingTargetTitle = "Opérateur FAI : ${isp.ispSummary} (${isp.publicIp})"
+            )
+        }
+        viewModelScope.launch {
+            val result = geminiGroundingService.auditIsp(isp)
+            if (result.isSuccess) {
+                _uiState.update {
+                    it.copy(
+                        isGroundingLoading = false,
+                        groundingResult = result.getOrNull(),
+                        groundingErrorMessage = null
+                    )
+                }
+            } else {
+                _uiState.update {
+                    it.copy(
+                        isGroundingLoading = false,
+                        groundingErrorMessage = result.exceptionOrNull()?.message
+                            ?: "Erreur lors de l'audit FAI avec Google Search"
+                    )
+                }
+            }
+        }
+    }
+
+    fun retryLastGroundingAudit() {
+        val selected = _uiState.value.selectedDevice
+        val isp = _uiState.value.ispInfo
+        if (selected != null) {
+            auditDeviceWithGoogleSearch(selected)
+        } else if (isp != null) {
+            auditIspWithGoogleSearch(isp)
+        }
+    }
+
+    fun closeGroundingDialog() {
+        _uiState.update {
+            it.copy(
+                showGroundingDialog = false,
+                isGroundingLoading = false,
+                groundingErrorMessage = null
+            )
         }
     }
 

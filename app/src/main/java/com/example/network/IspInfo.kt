@@ -7,13 +7,13 @@ package com.example.network
 data class IspInfo(
     val publicIp: String,
     val ispName: String,
-    val organization: String,
-    val asn: String,
-    val country: String,
-    val countryCode: String,
-    val city: String,
-    val region: String,
-    val reverseDns: String,
+    val organization: String = "",
+    val asn: String = "",
+    val country: String = "",
+    val countryCode: String = "",
+    val city: String = "",
+    val region: String = "",
+    val reverseDns: String = "",
     val isVpnOrProxy: Boolean = false,
     val queryTimestamp: Long = System.currentTimeMillis()
 ) {

@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
@@ -55,8 +56,10 @@ import androidx.compose.ui.unit.sp
 import com.example.domain.DeviceCategory
 import com.example.domain.NetworkDevice
 import com.example.domain.ThreatLevel
+import com.example.ui.theme.AccentCyan
 import com.example.ui.theme.AlertRed
 import com.example.ui.theme.AlertRedContainer
+import com.example.ui.theme.PrimaryNavy
 import com.example.ui.theme.SafeGreen
 import com.example.ui.theme.SafeGreenContainer
 import com.example.ui.theme.WarningAmber
@@ -67,7 +70,8 @@ fun DeviceDetailDialog(
     device: NetworkDevice,
     onDismiss: () -> Unit,
     onToggleTrust: (NetworkDevice) -> Unit,
-    onRename: (NetworkDevice, String) -> Unit
+    onRename: (NetworkDevice, String) -> Unit,
+    onGoogleSearchAudit: ((NetworkDevice) -> Unit)? = null
 ) {
     var isEditingName by remember { mutableStateOf(false) }
     var editedName by remember { mutableStateOf(device.customName ?: "") }
@@ -218,6 +222,28 @@ fun DeviceDetailDialog(
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
+
+                // Bouton d'audit de sécurité Web avec Google Search Grounding (gemini-3.5-flash)
+                Button(
+                    onClick = { onGoogleSearchAudit?.invoke(device) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("device_google_search_audit_button"),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = PrimaryNavy,
+                        contentColor = AccentCyan
+                    )
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.AutoAwesome,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Audit Failles Web (Google Search AI)")
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
 
                 // Bouton de marquage Appareil de confiance
                 OutlinedButton(

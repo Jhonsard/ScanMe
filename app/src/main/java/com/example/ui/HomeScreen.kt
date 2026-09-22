@@ -75,6 +75,7 @@ import com.example.ui.components.CreditCardPaymentModal
 import com.example.ui.components.DeviceDetailDialog
 import com.example.ui.components.IspDetailsCard
 import com.example.ui.components.PaywallDialog
+import com.example.ui.components.SearchGroundingDialog
 import com.example.ui.components.TrialBanner
 import com.example.ui.components.TrialExpiredDialog
 import com.example.ui.components.getCategoryBackgroundColor
@@ -223,7 +224,8 @@ fun HomeScreen(
                         isPremium = uiState.isPremium,
                         errorMessage = uiState.ispErrorMessage,
                         onRefreshIsp = { viewModel.fetchIspDetails() },
-                        onUnlockPro = { viewModel.openPaywall() }
+                        onUnlockPro = { viewModel.openPaywall() },
+                        onGoogleSearchAudit = { viewModel.auditIspWithGoogleSearch(it) }
                     )
                 }
 
@@ -312,7 +314,20 @@ fun HomeScreen(
                 device = device,
                 onDismiss = { viewModel.selectDevice(null) },
                 onToggleTrust = { viewModel.toggleTrust(it) },
-                onRename = { dev, name -> viewModel.renameDevice(dev, name) }
+                onRename = { dev, name -> viewModel.renameDevice(dev, name) },
+                onGoogleSearchAudit = { viewModel.auditDeviceWithGoogleSearch(it) }
+            )
+        }
+
+        // Boîte de dialogue d'audit Google Search Grounding (gemini-3.5-flash)
+        if (uiState.showGroundingDialog) {
+            SearchGroundingDialog(
+                targetTitle = uiState.groundingTargetTitle ?: "Audit de sécurité Web",
+                isLoading = uiState.isGroundingLoading,
+                auditResult = uiState.groundingResult,
+                errorMessage = uiState.groundingErrorMessage,
+                onDismiss = { viewModel.closeGroundingDialog() },
+                onRetry = { viewModel.retryLastGroundingAudit() }
             )
         }
 
