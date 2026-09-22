@@ -70,7 +70,7 @@ data class ScanUiState(
         }
 }
 
-class ScanViewModel(
+class ScanViewModel @JvmOverloads constructor(
     application: Application,
     private val customBillingRepository: BillingRepository? = null,
     private val customTrialManager: TrialManager? = null,
