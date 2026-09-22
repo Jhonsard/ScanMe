@@ -4,8 +4,14 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.billing.BillingRepository
+import com.example.billing.PaymentCard
+import com.example.billing.PaymentGatewayService
+import com.example.billing.PaymentTransaction
 import com.example.billing.PricingPlan
 import com.example.billing.SubscriptionTier
+import com.example.billing.TrialManager
+import com.example.billing.TrialState
+import com.example.billing.TrialStatus
 import com.example.data.DeviceRepository
 import com.example.data.NetWardDatabase
 import com.example.data.ScanComparisonResult
@@ -13,6 +19,8 @@ import com.example.domain.DeviceCategory
 import com.example.domain.NetworkDevice
 import com.example.domain.NetworkScanAggregator
 import com.example.network.ArpReader
+import com.example.network.IspInfo
+import com.example.network.IspNetworkService
 import com.example.network.PingResult
 import com.example.network.PingSweepEngine
 import com.example.network.ScanProgress
@@ -40,7 +48,16 @@ data class ScanUiState(
     val filterCategory: DeviceCategory? = null,
     val errorMessage: String? = null,
     val isPremium: Boolean = false,
-    val showPaywall: Boolean = false
+    val showPaywall: Boolean = false,
+    val trialState: TrialState? = null,
+    val showTrialExpiredDialog: Boolean = false,
+    val showCardPaymentModal: Boolean = false,
+    val selectedPlanForPayment: PricingPlan? = null,
+    val isProcessingPayment: Boolean = false,
+    val paymentErrorMessage: String? = null,
+    val ispInfo: IspInfo? = null,
+    val isLoadingIsp: Boolean = false,
+    val ispErrorMessage: String? = null
 ) {
     val displayedDevices: List<NetworkDevice>
         get() {
@@ -53,17 +70,32 @@ data class ScanUiState(
         }
 }
 
-class ScanViewModel(application: Application) : AndroidViewModel(application) {
+class ScanViewModel(
+    application: Application,
+    private val customBillingRepository: BillingRepository? = null,
+    private val customTrialManager: TrialManager? = null,
+    private val customIspService: IspNetworkService? = null,
+    private val customDeviceRepository: DeviceRepository? = null,
+    private val customScanAggregator: NetworkScanAggregator? = null
+) : AndroidViewModel(application) {
 
     private val subnetManager = SubnetManager(application)
     private val pingSweepEngine = PingSweepEngine()
     private val arpReader = ArpReader()
-    private val scanAggregator = NetworkScanAggregator()
+    private val scanAggregator = customScanAggregator ?: NetworkScanAggregator()
     private val database = NetWardDatabase.getInstance(application)
-    private val deviceRepository = DeviceRepository(database.deviceDao())
-    val billingRepository = BillingRepository(application)
+    private val deviceRepository = customDeviceRepository ?: DeviceRepository(database.deviceDao())
+    val billingRepository = customBillingRepository ?: BillingRepository(application)
+    val trialManager = customTrialManager ?: TrialManager(application)
+    private val paymentGatewayService = PaymentGatewayService(application, billingRepository)
+    private val ispNetworkService = customIspService ?: IspNetworkService()
 
-    private val _uiState = MutableStateFlow(ScanUiState(isPremium = billingRepository.isPremium()))
+    private val _uiState = MutableStateFlow(
+        ScanUiState(
+            isPremium = billingRepository.isPremium(),
+            trialState = trialManager.trialState.value
+        )
+    )
     val uiState: StateFlow<ScanUiState> = _uiState.asStateFlow()
 
     init {
@@ -71,6 +103,11 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             billingRepository.subscriptionTier.collect { tier ->
                 _uiState.update { it.copy(isPremium = tier == SubscriptionTier.PREMIUM) }
+            }
+        }
+        viewModelScope.launch {
+            trialManager.trialState.collect { trial ->
+                _uiState.update { it.copy(trialState = trial) }
             }
         }
     }
@@ -155,8 +192,109 @@ class ScanViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun refreshTrialState() {
+        val updated = trialManager.refreshTrialState()
+        _uiState.update { it.copy(trialState = updated) }
+    }
+
+    fun dismissTrialExpiredDialog() {
+        _uiState.update { it.copy(showTrialExpiredDialog = false) }
+    }
+
+    fun openCardPayment(plan: PricingPlan) {
+        _uiState.update {
+            it.copy(
+                showPaywall = false,
+                showCardPaymentModal = true,
+                selectedPlanForPayment = plan,
+                paymentErrorMessage = null
+            )
+        }
+    }
+
+    fun closeCardPayment() {
+        _uiState.update {
+            it.copy(
+                showCardPaymentModal = false,
+                selectedPlanForPayment = null,
+                paymentErrorMessage = null,
+                isProcessingPayment = false
+            )
+        }
+    }
+
+    fun processCardPayment(
+        card: PaymentCard,
+        plan: PricingPlan,
+        onComplete: (Result<PaymentTransaction>) -> Unit = {}
+    ) {
+        _uiState.update { it.copy(isProcessingPayment = true, paymentErrorMessage = null) }
+        viewModelScope.launch {
+            val result = paymentGatewayService.processCardPayment(card, plan)
+            if (result.isSuccess) {
+                _uiState.update {
+                    it.copy(
+                        isProcessingPayment = false,
+                        showCardPaymentModal = false,
+                        selectedPlanForPayment = null,
+                        isPremium = true
+                    )
+                }
+                onComplete(result)
+                // Déclenchement automatique de l'analyse WAN / FAI suite à la montée en gamme
+                fetchIspDetails()
+            } else {
+                val error = result.exceptionOrNull()?.message ?: "Échec du paiement par carte bancaire"
+                _uiState.update {
+                    it.copy(
+                        isProcessingPayment = false,
+                        paymentErrorMessage = error
+                    )
+                }
+                onComplete(result)
+            }
+        }
+    }
+
+    fun fetchIspDetails() {
+        _uiState.update { it.copy(isLoadingIsp = true, ispErrorMessage = null) }
+        viewModelScope.launch(Dispatchers.IO) {
+            val result = ispNetworkService.fetchIspDetails()
+            if (result.isSuccess) {
+                val info = result.getOrNull()
+                _uiState.update {
+                    it.copy(
+                        isLoadingIsp = false,
+                        ispInfo = info,
+                        ispErrorMessage = null
+                    )
+                }
+            } else {
+                _uiState.update {
+                    it.copy(
+                        isLoadingIsp = false,
+                        ispErrorMessage = result.exceptionOrNull()?.message ?: "Erreur réseau FAI"
+                    )
+                }
+            }
+        }
+    }
+
     fun startScan() {
         if (_uiState.value.isScanning) return
+
+        // Vérification de la période d'essai de 30 jours (ou statut Pro)
+        val currentTrial = trialManager.refreshTrialState()
+        val isPremiumUser = billingRepository.isPremium()
+        if (!currentTrial.isScanAllowed(isPremiumUser)) {
+            _uiState.update {
+                it.copy(
+                    trialState = currentTrial,
+                    showTrialExpiredDialog = true
+                )
+            }
+            return
+        }
 
         viewModelScope.launch(Dispatchers.IO) {
             var subnet = subnetManager.getActiveSubnetInfo()

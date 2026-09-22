@@ -71,8 +71,12 @@ import com.example.domain.DeviceCategory
 import com.example.domain.NetworkDevice
 import com.example.domain.ThreatLevel
 import com.example.network.SubnetInfo
+import com.example.ui.components.CreditCardPaymentModal
 import com.example.ui.components.DeviceDetailDialog
+import com.example.ui.components.IspDetailsCard
 import com.example.ui.components.PaywallDialog
+import com.example.ui.components.TrialBanner
+import com.example.ui.components.TrialExpiredDialog
 import com.example.ui.components.getCategoryBackgroundColor
 import com.example.ui.components.getCategoryIcon
 import com.example.ui.components.getCategoryIconColor
@@ -192,11 +196,34 @@ fun HomeScreen(
                 contentPadding = PaddingValues(vertical = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
+                // 0. Bandeau de période d'essai de 30 jours
+                uiState.trialState?.let { trial ->
+                    item {
+                        TrialBanner(
+                            trialState = trial,
+                            isPremium = uiState.isPremium,
+                            onUpgradeClick = { viewModel.openPaywall() }
+                        )
+                    }
+                }
+
                 // 1. Carte d'état de la topologie réseau
                 item {
                     NetworkTopologyCard(
                         subnet = uiState.subnetInfo,
                         scanMode = uiState.scanMode
+                    )
+                }
+
+                // 1bis. Carte d'analyse WAN / FAI Pro
+                item {
+                    IspDetailsCard(
+                        ispInfo = uiState.ispInfo,
+                        isLoading = uiState.isLoadingIsp,
+                        isPremium = uiState.isPremium,
+                        errorMessage = uiState.ispErrorMessage,
+                        onRefreshIsp = { viewModel.fetchIspDetails() },
+                        onUnlockPro = { viewModel.openPaywall() }
                     )
                 }
 
@@ -295,8 +322,33 @@ fun HomeScreen(
                 plans = viewModel.billingRepository.availablePlans,
                 isCurrentlyPremium = uiState.isPremium,
                 onDismiss = { viewModel.closePaywall() },
-                onSubscribe = { plan -> viewModel.subscribe(plan) },
+                onSubscribe = { plan -> viewModel.openCardPayment(plan) },
                 onRestore = { viewModel.restorePurchases() }
+            )
+        }
+
+        // Fenêtre de paiement par carte bancaire (Visa, Mastercard, Amex)
+        if (uiState.showCardPaymentModal && uiState.selectedPlanForPayment != null) {
+            CreditCardPaymentModal(
+                selectedPlan = uiState.selectedPlanForPayment!!,
+                isProcessing = uiState.isProcessingPayment,
+                errorMessage = uiState.paymentErrorMessage,
+                onDismiss = { viewModel.closeCardPayment() },
+                onSubmitPayment = { card ->
+                    viewModel.processCardPayment(card, uiState.selectedPlanForPayment!!)
+                }
+            )
+        }
+
+        // Fenêtre d'alerte expiration essai 30 jours
+        if (uiState.showTrialExpiredDialog && uiState.trialState != null) {
+            TrialExpiredDialog(
+                trialState = uiState.trialState!!,
+                onDismiss = { viewModel.dismissTrialExpiredDialog() },
+                onSubscribeClick = {
+                    viewModel.dismissTrialExpiredDialog()
+                    viewModel.openPaywall()
+                }
             )
         }
     }
