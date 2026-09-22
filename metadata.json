@@ -1,0 +1,6 @@
+{
+  "name": "NetWard",
+  "description": "Network security scanner and hidden camera detector",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
